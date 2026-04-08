@@ -13,5 +13,33 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Header Files\Code">
+      <UniqueIdentifier>{19596a2f-cf1b-4aee-9333-c50e1eb3301d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Code">
+      <UniqueIdentifier>{63be1821-23d4-441f-bc34-7cfc4769599e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Test">
+      <UniqueIdentifier>{afc7fe13-51b9-41e8-805e-aebb144e816a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Test">
+      <UniqueIdentifier>{f7346911-9677-4cd2-a7a2-cb7464e9d880}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Code\MortonMath.h">
+      <Filter>Header Files\Code</Filter>
+    </ClInclude>
+    <ClInclude Include="Code\MortonNumbers.h">
+      <Filter>Header Files\Code</Filter>
+    </ClInclude>
+    <ClInclude Include="Test\MortonTests.h">
+      <Filter>Header Files\Test</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Test\main.cpp">
+      <Filter>Source Files\Test</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
