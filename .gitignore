@@ -1,0 +1,113 @@
+############################################
+# Visual Studio (2022 / 2026)
+############################################
+
+# User-specific files
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+
+# VS workspace
+.vs/
+
+############################################
+# Build outputs
+############################################
+
+# Default MSVC output folders
+Debug/
+Release/
+x64/
+x86/
+ARM/
+ARM64/
+
+# CMake (if used)
+out/
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+############################################
+# Compiled files
+############################################
+
+# Object files
+*.obj
+*.o
+*.lo
+
+# Static libraries
+*.lib
+*.a
+
+# Dynamic libraries
+*.dll
+*.so
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+
+############################################
+# MSVC specific
+############################################
+
+# Program database
+*.pdb
+*.idb
+*.ipdb
+*.iobj
+
+# Incremental linker files
+*.ilk
+
+# Precompiled headers
+*.pch
+
+############################################
+# IntelliSense / browsing
+############################################
+
+*.VC.db
+*.VC.opendb
+
+############################################
+# Logs
+############################################
+
+*.log
+
+############################################
+# NuGet
+############################################
+
+packages/
+*.nupkg
+
+############################################
+# vcpkg (if used)
+############################################
+
+vcpkg_installed/
+vcpkg/buildtrees/
+vcpkg/packages/
+
+############################################
+# Temporary files
+############################################
+
+*.tmp
+*.temp
+*.cache
+
+############################################
+# OS files
+############################################
+
+.DS_Store
+Thumbs.db
