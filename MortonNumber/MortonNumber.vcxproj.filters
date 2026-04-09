@@ -36,6 +36,12 @@
     <ClInclude Include="Test\MortonTests.h">
       <Filter>Header Files\Test</Filter>
     </ClInclude>
+    <ClInclude Include="Code\MortonCore.h">
+      <Filter>Header Files\Code</Filter>
+    </ClInclude>
+    <ClInclude Include="Code\MortonDebug.h">
+      <Filter>Header Files\Code</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Test\main.cpp">

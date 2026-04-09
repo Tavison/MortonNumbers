@@ -120,6 +120,8 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -127,6 +129,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Code\MortonCore.h" />
+    <ClInclude Include="Code\MortonDebug.h" />
     <ClInclude Include="Code\MortonMath.h" />
     <ClInclude Include="Code\MortonNumbers.h" />
     <ClInclude Include="Test\MortonTests.h" />

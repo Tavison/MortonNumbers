@@ -5,12 +5,13 @@
 
 int main()
 {
-	bitCountTest();
-	test_add();
-	test_sub();
-	test_mul();
-	test_div();
-	TestMortonEncodeMagicBits();
-	TestEncode_Decode();
+	MortonBench::bitCountTest();
+	MortonBench::test_add();
+	MortonBench::test_sub();
+	MortonBench::test_mul();
+	MortonBench::test_div();
+	MortonBench::TestMortonEncodeMagicBits();
+	MortonBench::TestMortonDecodeMagicBits();
+	MortonBench::TestMortonEncodeDecodeRoundTrip();
 }
 
