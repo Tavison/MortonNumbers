@@ -44,7 +44,7 @@ namespace Morton
 		 */
 		MortonNumber& operator+=(const MortonNumber& rhs)
 		{
-			m_value = add(m_value, rhs.m_value);
+			m_value = add_iterative(m_value, rhs.m_value);
 			return *this;
 		}
 

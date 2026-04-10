@@ -1,40 +1,238 @@
 #pragma once
 
 
-
-#ifdef _MSC_VER
-#include <intrin.h>	// For unsigned __int64 __popcnt64(unsigned __int64 value);
-#endif
+#include "../Code/MortonNumbers.h"	// Morton Numbers
+#include "../Code/MortonDebug.h"
 
 #include <cstdint>	// For specific int types
 #include <chrono>	// For timers and clocks
-#include <cassert>	// For assert
 #include <iostream>	// For cout
-#include <bitset>	// For bit set for counting bits
+#include <bit>
+#include <string_view>
 
-#include "../Code/MortonNumbers.h"	// Morton Numbers
 
 namespace MortonBench
 {
 	uint64_t BitCount(uint64_t x)
 	{
-#ifdef _MSC_VER
-		return __popcnt64(x);
-#elif __clang__
-		return __builtin_popcount(x);
-#elif __GNUC__
-		return __builtin_popcount(x);
-#else
-		const uint64_t m1 = 0x5555555555555555; //binary: 0101...
-		const uint64_t m2 = 0x3333333333333333; //binary: 00110011..
-		const uint64_t m4 = 0x0f0f0f0f0f0f0f0f; //binary:  4 zeros,  4 ones ...
-		const uint64_t h01 = 0x0101010101010101; //the sum of 256 to the power of 0,1,2,3...
+		return std::popcount(x);
+	}
 
-		x -= (x >> 1) & m1;				//put count of each 2 bits into those 2 bits
-		x = (x & m2) + ((x >> 2) & m2);	//put count of each 4 bits into those 4 bits 
-		x = (x + (x >> 4)) & m4;		//put count of each 8 bits into those 8 bits 
-		return (x * h01) >> 56;			//returns left 8 bits of x + (x<<8) + (x<<16) + (x<<24) + ... 
-#endif
+	/**
+	 * @brief Runs a benchmark loop and returns the elapsed time in nanoseconds.
+	 *
+	 * The supplied function is called once per iteration with the current loop
+	 * index. Its return value is mixed into a checksum so the compiler cannot
+	 * discard the work as dead code.
+	 *
+	 * The loop body is intentionally generic so the same benchmark harness can be
+	 * reused for Morton addition, subtraction, encoding, decoding, and other
+	 * operations.
+	 *
+	 * @tparam ResultFn Callable type taking std::uint64_t and returning a value
+	 * convertible to std::uint64_t.
+	 * @param iterations Number of loop iterations to execute.
+	 * @param result_fn Function that produces the benchmarked result for each
+	 * iteration.
+	 * @param checksum_out Receives the final checksum value.
+	 * @return Elapsed time in nanoseconds for the benchmark loop.
+	 */
+	template <typename ResultFn>
+	std::uint64_t benchmark_loop(
+		std::uint64_t iterations,
+		ResultFn result_fn,
+		std::uint64_t& checksum_out)
+	{
+		std::uint64_t checksum = 0;
+
+		const auto t1 = std::chrono::high_resolution_clock::now();
+
+		for (std::uint64_t i = 0; i < iterations; ++i)
+		{
+			const std::uint64_t result =
+				static_cast<std::uint64_t>(result_fn(i));
+
+			checksum = std::rotl(checksum, 7)
+				^ (result + 0x9e3779b97f4a7c15ull);
+			checksum *= 0xbf58476d1ce4e5b9ull;
+		}
+
+		const auto t2 = std::chrono::high_resolution_clock::now();
+
+		checksum_out = checksum;
+
+		return static_cast<std::uint64_t>(
+			std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count());
+	}
+
+	/**
+	 * @brief Runs a reusable baseline benchmark loop.
+	 *
+	 * This baseline is meant to approximate the loop, input generation, and
+	 * checksum cost of a benchmark without including the actual operation under
+	 * test. The closer this baseline resembles the structure of the real benchmark,
+	 * the more meaningful the "net" subtraction becomes.
+	 *
+	 * The supplied function should usually generate the same per-iteration inputs
+	 * as the real benchmark, but replace the expensive operation with a trivial
+	 * expression.
+	 *
+	 * @tparam BaselineFn Callable type taking std::uint64_t and returning a value
+	 * convertible to std::uint64_t.
+	 * @param label Name to print for the baseline.
+	 * @param iterations Number of loop iterations to execute.
+	 * @param baseline_fn Function producing the baseline result for each iteration.
+	 * @return Elapsed time in nanoseconds for the baseline loop.
+	 */
+	template <typename BaselineFn>
+	std::uint64_t benchmark_baseline(
+		std::string_view label,
+		std::uint64_t iterations,
+		BaselineFn baseline_fn)
+	{
+		std::uint64_t checksum = 0;
+
+		const std::uint64_t elapsed_ns =
+			benchmark_loop(iterations, baseline_fn, checksum);
+
+		std::cout << label << " for " << iterations << " runs took "
+			<< elapsed_ns << " ns. Checksum: "
+			<< checksum << '\n';
+
+		return elapsed_ns;
+	}
+
+	/**
+	 * @brief Benchmarks one operation and prints its elapsed time and checksum.
+	 *
+	 * @tparam OperationFn Callable type taking std::uint64_t and returning a value
+	 * convertible to std::uint64_t.
+	 * @param label Name to print for the benchmark.
+	 * @param iterations Number of loop iterations to execute.
+	 * @param operation_fn Function producing the benchmark result for each
+	 * iteration.
+	 * @return Elapsed time in nanoseconds for the benchmark loop.
+	 */
+	template <typename OperationFn>
+	std::uint64_t benchmark_operation(
+		std::string_view label,
+		std::uint64_t iterations,
+		OperationFn operation_fn)
+	{
+		std::uint64_t checksum = 0;
+
+		const std::uint64_t elapsed_ns =
+			benchmark_loop(iterations, operation_fn, checksum);
+
+		std::cout << label << " for " << iterations << " runs took "
+			<< elapsed_ns << " ns. Checksum: "
+			<< checksum << '\n';
+
+		return elapsed_ns;
+	}
+
+	/**
+	 * @brief Benchmarks a baseline loop and an operation loop, then prints the
+	 * net time difference.
+	 *
+	 * This is useful when the measured operation is small enough that loop,
+	 * input-generation, and checksum costs meaningfully affect the total time.
+	 *
+	 * The baseline and operation functions should have the same broad structure and
+	 * input-generation pattern so that the subtraction is as fair as possible.
+	 *
+	 * @tparam BaselineFn Callable type taking std::uint64_t and returning a value
+	 * convertible to std::uint64_t.
+	 * @tparam OperationFn Callable type taking std::uint64_t and returning a value
+	 * convertible to std::uint64_t.
+	 * @param label Name of the operation under test.
+	 * @param iterations Number of loop iterations to execute.
+	 * @param baseline_fn Function that models loop/input/checksum overhead.
+	 * @param operation_fn Function that performs the real operation under test.
+	 */
+	template <typename BaselineFn, typename OperationFn>
+	void benchmark_with_baseline(
+		std::string_view label,
+		std::uint64_t iterations,
+		BaselineFn baseline_fn,
+		OperationFn operation_fn)
+	{
+		std::uint64_t baseline_checksum = 0;
+		std::uint64_t operation_checksum = 0;
+
+		const std::uint64_t baseline_ns =
+			benchmark_loop(iterations, baseline_fn, baseline_checksum);
+
+		const std::uint64_t operation_ns =
+			benchmark_loop(iterations, operation_fn, operation_checksum);
+
+		std::cout << label << '\n';
+		std::cout << "  baseline for " << iterations << " runs took "
+			<< baseline_ns << " ns. Checksum: "
+			<< baseline_checksum << '\n';
+		std::cout << "  full     for " << iterations << " runs took "
+			<< operation_ns << " ns. Checksum: "
+			<< operation_checksum << '\n';
+		std::cout << "  net: " << (operation_ns - baseline_ns) << " ns\n";
+	}
+
+	/**
+	 * @brief Compares two operations against the same baseline.
+	 *
+	 * This is useful when evaluating two implementations of the same algorithm,
+	 * such as iterative Morton addition versus masked-lane Morton addition.
+	 *
+	 * The same baseline function is used for both measurements so that the net
+	 * comparison is performed against the same modeled loop overhead.
+	 *
+	 * @tparam BaselineFn Callable type taking std::uint64_t and returning a value
+	 * convertible to std::uint64_t.
+	 * @tparam FnA Callable type taking std::uint64_t and returning a value
+	 * convertible to std::uint64_t.
+	 * @tparam FnB Callable type taking std::uint64_t and returning a value
+	 * convertible to std::uint64_t.
+	 * @param label_a Printed name for the first implementation.
+	 * @param fn_a First implementation under test.
+	 * @param label_b Printed name for the second implementation.
+	 * @param fn_b Second implementation under test.
+	 * @param iterations Number of loop iterations to execute.
+	 * @param baseline_fn Function that models loop/input/checksum overhead.
+	 */
+	template <typename BaselineFn, typename FnA, typename FnB>
+	void benchmark_compare(
+		std::string_view label_a,
+		FnA fn_a,
+		std::string_view label_b,
+		FnB fn_b,
+		std::uint64_t iterations,
+		BaselineFn baseline_fn)
+	{
+		benchmark_with_baseline(label_a, iterations, baseline_fn, fn_a);
+		benchmark_with_baseline(label_b, iterations, baseline_fn, fn_b);
+	}
+
+	template <typename ResultFn>
+	std::uint64_t run_benchmark_body(ResultFn result_fn, std::uint64_t& checksum_out)
+	{
+		std::uint64_t checksum = 0;
+
+		auto t1 = std::chrono::high_resolution_clock::now();
+
+		for (std::uint64_t i = 0; i < 1'000'000; ++i)
+		{
+			const std::uint64_t a = i;
+			const std::uint64_t b = i * 2;
+
+			const std::uint64_t r = result_fn(a, b);
+
+			checksum = std::rotl(checksum, 7) ^ (r + 0x9e3779b97f4a7c15ull);
+			checksum *= 0xbf58476d1ce4e5b9ull;
+		}
+
+		auto t2 = std::chrono::high_resolution_clock::now();
+		checksum_out = checksum;
+
+		return std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count();
 	}
 
 	void bitCountTest()
@@ -64,13 +262,53 @@ namespace MortonBench
 		auto t1 = std::chrono::high_resolution_clock::now();
 		for (std::uint64_t i = 0; i < 1000; ++i)
 		{
-			k = Morton::add(k, l);
+			k = Morton::add_iterative(k, l);
 		}
 		auto t2 = std::chrono::high_resolution_clock::now();
 		auto d = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1);
 		std::cout << "Add for 1000 runs took " << d.count() << " nanoseconds." << std::endl;
 	}
 
+	void test_add_compare()
+	{
+		constexpr std::uint64_t iterations = 1'000'000;
+
+		auto baseline_fn = [](std::uint64_t i) noexcept -> std::uint64_t
+			{
+				const std::uint64_t a = i;
+				const std::uint64_t b = i * 10;
+
+				// Broadly similar structure to the add benchmark, but cheap.
+				return a ^ b;
+			};
+
+		auto iterative_fn = [](std::uint64_t i) noexcept -> std::uint64_t
+			{
+				const std::uint64_t a = i;
+				const std::uint64_t b = i * 10;
+				return Morton::add_iterative(a, b);
+			};
+
+		auto masked_fn = [](std::uint64_t i) noexcept -> std::uint64_t
+			{
+				const std::uint64_t a = i;
+				const std::uint64_t b = i * 10;
+				return Morton::add_masked(a, b);
+			};
+
+		for (int run = 0; run < 5; ++run)
+		{
+			benchmark_compare(
+				"Iterative add",
+				iterative_fn,
+				"Masked add   ",
+				masked_fn,
+				iterations,
+				baseline_fn);
+
+			std::cout << "----\n";
+		}
+	}
 	void test_sub()
 	{
 		volatile std::uint64_t k = 0b111111111111111111111111111111;
