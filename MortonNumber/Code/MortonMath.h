@@ -4,6 +4,7 @@
 
 #include "MortonCore.h"
 
+#include <bit>
 #include <cstdint>
 #include <cassert>
 
@@ -20,32 +21,6 @@ namespace Morton
 		MortonCore::Detail::lane_mask_3d
 		| (MortonCore::Detail::lane_mask_3d << 1)
 		| (MortonCore::Detail::lane_mask_3d << 2);
-
-	/**
-	* @brief Adds two Morton-coded values using carry propagation spaced three
-	* bits apart.
-	*
-	* The carry is generated from bit positions that overlap in both operands and
-	* is then moved left by three positions so that it remains aligned with the
-	* same coordinate lane in the Morton representation.
-	*
-	* @param op1 Left-hand operand.
-	* @param op2 Right-hand operand.
-	* @return Sum of the two Morton-coded operands.
-	*/
-	auto add_iterative(std::uint64_t op1, std::uint64_t op2)
-	{
-		std::uint64_t sum, carry;
-		do
-		{
-			sum = op1 ^ op2;
-			carry = op1 & op2;
-			carry <<= 3;
-			op1 = sum;
-			op2 = carry;
-		} while (carry);
-		return sum & occupied_mask_3d;
-	}
 
 	/**
 		* @brief Adds two values from a single Morton lane using a masked integer add.
@@ -85,7 +60,7 @@ namespace Morton
 		* @return Sum of the two Morton-coded operands.
 		*/
 	[[nodiscard]] constexpr MORTON_FORCEINLINE std::uint64_t
-		add_masked(std::uint64_t op1, std::uint64_t op2) noexcept
+		add(std::uint64_t op1, std::uint64_t op2) noexcept
 	{
 		using namespace MortonCore::Detail;
 
@@ -133,7 +108,7 @@ namespace Morton
 		* @return Difference of the two Morton-coded operands.
 		*/
 	[[nodiscard]] constexpr MORTON_FORCEINLINE std::uint64_t
-		subtract_masked(std::uint64_t op1, std::uint64_t op2) noexcept
+		subtract(std::uint64_t op1, std::uint64_t op2) noexcept
 	{
 		using namespace MortonCore::Detail;
 
@@ -144,35 +119,6 @@ namespace Morton
 		return subtract_lane(op1, op2, x_mask)
 			| subtract_lane(op1, op2, y_mask)
 			| subtract_lane(op1, op2, z_mask);
-	}
-
-	/**
-	* @brief Subtracts one Morton-coded value from another using borrow
-	* propagation spaced three bits apart.
-	*
-	* The borrow is generated from positions where the subtrahend contains a set
-	* bit and the minuend does not. The borrow is then moved left by three
-	* positions so that it remains aligned with the same coordinate lane in the
-	* Morton representation.
-	*
-	* @param op1 Minuend.
-	* @param op2 Subtrahend.
-	* @return Difference of the operands, or 0 when the final result does not
-	* compare as less than the original minuend.
-	*/
-	auto subtract_iterative(std::uint64_t op1, std::uint64_t op2)
-	{
-		auto check = op1;
-		std::uint64_t dif, borrow;
-		while (op2 != 0)
-		{
-			dif = op1 ^ op2;
-			borrow = (~op1) & op2;
-			borrow <<= 3;
-			op1 = dif;
-			op2 = borrow;
-		};
-		return (dif < check) ? dif : 0;
 	}
 
 	/**
@@ -194,7 +140,7 @@ namespace Morton
 		{
 			if (b & 7)
 			{
-				res = add_iterative(res, a);
+				res = add(res, a);
 			}
 			a <<= 3;
 			b >>= 3;
@@ -237,12 +183,113 @@ namespace Morton
 			auto t3 = static_cast<std::uint64_t>(b3);
 
 			auto incrementer = t1 + (t2 << 1) + (t3 << 2);
-			quotient = add_iterative(quotient, incrementer);
+			quotient = add(quotient, incrementer);
 
 			dividend = subtract(dividend, divisor);
 		}
 
 		return quotient;
+	}
+
+	/**
+	* @brief Computes per-coordinate modulo of a Morton-coded value against
+	* power-of-two periods given as bit counts.
+	*
+	* When all three periods are powers of two (px = 2^kx, etc.) the modulo
+	* per coordinate reduces to masking the lowest @p kN bits of each lane.
+	* Those bits occupy positions 0, 3, …, 3*(kN-1) within the Morton code,
+	* so the entire operation is a single AND with no decode/encode round-trip.
+	*
+	* @param morton Morton-coded value.
+	* @param kx     Bit count for X (period = 2^kx).
+	* @param ky     Bit count for Y (period = 2^ky).
+	* @param kz     Bit count for Z (period = 2^kz).
+	* @return Morton code of (x % 2^kx, y % 2^ky, z % 2^kz).
+	*/
+	[[nodiscard]] constexpr MORTON_FORCEINLINE std::uint64_t
+		modulo_pow2(std::uint64_t morton, std::uint32_t kx, std::uint32_t ky, std::uint32_t kz) noexcept
+	{
+		using namespace MortonCore::Detail;
+
+		const std::uint64_t x_mask = lane_mask_3d        & ((1ULL << (3 * kx))     - 1);
+		const std::uint64_t y_mask = (lane_mask_3d << 1) & ((1ULL << (3 * ky + 1)) - 1);
+		const std::uint64_t z_mask = (lane_mask_3d << 2) & ((1ULL << (3 * kz + 2)) - 1);
+
+		return morton & (x_mask | y_mask | z_mask);
+	}
+
+	/**
+	* @brief Computes per-coordinate modulo of a Morton-coded value.
+	*
+	* Applies the given period independently to each axis and returns the
+	* result as a new Morton code. Works for any period including
+	* non-powers-of-two.
+	*
+	* When all three periods are powers of two the function detects this with
+	* a single bitwise AND per period and automatically dispatches to
+	* @ref modulo_pow2, avoiding the decode/encode round-trip entirely. The
+	* test is:
+	*
+	*   ((px & (px-1)) | (py & (py-1)) | (pz & (pz-1))) == 0
+	*
+	* All three terms are OR-ed so the compiler can evaluate them in parallel
+	* and fold the result into one comparison. When the periods are
+	* compile-time constants the branch is eliminated entirely.
+	*
+	* Callers who already know their periods are powers of two should call
+	* @ref modulo_pow2 directly to skip even the test.
+	*
+	* @param morton Morton-coded value.
+	* @param px     Period along X (must be > 0).
+	* @param py     Period along Y (must be > 0).
+	* @param pz     Period along Z (must be > 0).
+	* @return Morton code of (x % px, y % py, z % pz).
+	*/
+	[[nodiscard]] MORTON_FORCEINLINE std::uint64_t
+		modulo(std::uint64_t morton, std::uint32_t px, std::uint32_t py, std::uint32_t pz) noexcept
+	{
+		if (((px & (px - 1)) | (py & (py - 1)) | (pz & (pz - 1))) == 0)
+		{
+			return modulo_pow2(morton,
+				std::countr_zero(px),
+				std::countr_zero(py),
+				std::countr_zero(pz));
+		}
+
+		const auto d = MortonCore::morton_decode(morton);
+		return MortonCore::morton_encode(d.x % px, d.y % py, d.z % pz);
+	}
+
+	/**
+	* @brief Computes per-coordinate modulo of a Morton-coded value against
+	* power-of-two periods given as a Morton-coded period mask.
+	*
+	* This overload accepts @p period_mask as the Morton code of the largest
+	* valid coordinate in each axis — that is, morton_encode(px-1, py-1, pz-1)
+	* where each period is a power of two. Because each (pN-1) fills exactly
+	* the low kN bits of its lane with 1s, ANDing with this mask is equivalent
+	* to computing (x % px, y % py, z % pz) per coordinate.
+	*
+	* @note Only correct when every period is a power of two. For non-power-of-
+	* two periods, @p period_mask would not be an all-ones lane prefix and the
+	* result would be incorrect — use @ref modulo instead.
+	*
+	* Example:
+	* @code
+	* // 4×4×4 period: largest coordinate is (3,3,3)
+	* auto mask = morton_encode(3, 3, 3);
+	* auto wrapped = modulo_pow2(position, mask);
+	* @endcode
+	*
+	* @param morton      Morton-coded value.
+	* @param period_mask morton_encode(px-1, py-1, pz-1) where each pN is a
+	*                    power of two.
+	* @return Morton code of (x % px, y % py, z % pz).
+	*/
+	[[nodiscard]] constexpr MORTON_FORCEINLINE std::uint64_t
+		modulo_pow2(std::uint64_t morton, std::uint64_t period_mask) noexcept
+	{
+		return morton & period_mask;
 	}
 
 	/**
@@ -292,5 +339,63 @@ namespace Morton
 			op2 = borrow;
 		};
 		return dif;
+	}
+	/**
+	* @brief Descends one level into a child octant of the current node.
+	*
+	* During octree traversal the path and the octant index never share bit
+	* positions: the accumulated path occupies bits 3 and above while the
+	* octant index occupies only bits 0–2. Because there is no overlap,
+	* no carry can occur and the operation reduces to a single OR followed
+	* by a three-bit left shift. This makes descent O(1) and branch-free,
+	* replacing the iterative @ref radd for the traversal case.
+	*
+	* The three bits of @p octant encode which half of the current node is
+	* entered along each axis:
+	*   bit 0 – X half (0 = lower, 1 = upper)
+	*   bit 1 – Y half (0 = lower, 1 = upper)
+	*   bit 2 – Z half (0 = lower, 1 = upper)
+	*
+	* @param path   Accumulated Morton path to the current node.
+	* @param octant Child octant index in the range [0, 7].
+	* @return Morton path extended by one level into the selected child octant.
+	*/
+	[[nodiscard]] constexpr MORTON_FORCEINLINE std::uint64_t
+		descend(std::uint64_t path, std::uint64_t octant) noexcept
+	{
+		return (path | octant) << 3;
+	}
+
+	/**
+	* @brief Ascends one level toward the root of the octree.
+	*
+	* Reverses a single @ref descend step by shifting the path right by three
+	* positions, stripping the most recently entered child octant. The discarded
+	* low three bits held the octant index for the current level; use
+	* @ref octant_of before ascending if that value is needed.
+	*
+	* @param path Accumulated Morton path to the current node.
+	* @return Morton path retreated by one level toward the root.
+	*/
+	[[nodiscard]] constexpr MORTON_FORCEINLINE std::uint64_t
+		ascend(std::uint64_t path) noexcept
+	{
+		return path >> 3;
+	}
+
+	/**
+	* @brief Returns the octant index of the current node within its parent.
+	*
+	* Extracts the three low bits of @p path, which encode which child octant
+	* of the parent node the current path occupies. This is the value that was
+	* passed as @p octant in the @ref descend call that produced this path.
+	*
+	* @param path Accumulated Morton path to the current node.
+	* @return Octant index in the range [0, 7].
+	*/
+	[[nodiscard]] constexpr MORTON_FORCEINLINE std::uint64_t
+		octant_of(std::uint64_t path) noexcept
+	{
+		return path & 0x7ULL;
 	}
 } // namespace Morton

@@ -230,59 +230,56 @@ namespace MortonBench
 		std::cout << "BitCount for 1000 runs took " << d.count() << " nanoseconds." << std::endl;
 	}
 
-	void test_add_compare()
+	void test_add()
 	{
 		constexpr std::uint64_t iterations = 1'000'000;
 
 		auto baseline_fn = [](std::uint64_t i) noexcept -> std::uint64_t
-			{
-				const std::uint64_t a = i;
-				const std::uint64_t b = i * 10;
+		{
+			const std::uint64_t a = i;
+			const std::uint64_t b = i * 10;
 
-				// Broadly similar structure to the add benchmark, but cheap.
-				return a ^ b;
-			};
+			// Broadly similar structure to the add benchmark, but cheap.
+			return a ^ b;
+		};
 
-		auto iterative_fn = [](std::uint64_t i) noexcept -> std::uint64_t
-			{
-				const std::uint64_t a = i;
-				const std::uint64_t b = i * 10;
-				return Morton::add_iterative(a, b);
-			};
-
-		auto masked_fn = [](std::uint64_t i) noexcept -> std::uint64_t
-			{
-				const std::uint64_t a = i;
-				const std::uint64_t b = i * 10;
-				return Morton::add_masked(a, b);
-			};
+		auto addition = [](std::uint64_t i) noexcept -> std::uint64_t
+		{
+			const std::uint64_t a = i;
+			const std::uint64_t b = i * 10;
+			return Morton::add(a, b);
+		};
 
 		for (int run = 0; run < 5; ++run)
 		{
-			benchmark_compare(
-				"Iterative add",
-				iterative_fn,
-				"Masked add   ",
-				masked_fn,
-				iterations,
-				baseline_fn);
-
-			std::cout << "----\n";
+			benchmark_with_baseline("addition", iterations, baseline_fn, addition);
 		}
 	}
 
-	void test_sub()
+	void test_subtract()
 	{
-		volatile std::uint64_t k = 0b111111111111111111111111111111;
-		volatile std::uint64_t l = 0b111;
-		auto t1 = std::chrono::high_resolution_clock::now();
-		for (std::uint64_t i = 0; i < 1000; ++i)
+		constexpr std::uint64_t iterations = 1'000'000;
+
+		auto baseline_fn = [](std::uint64_t i) noexcept -> std::uint64_t
 		{
-			k = Morton::subtract(k, l);
+			const std::uint64_t a = i;
+			const std::uint64_t b = i * 10;
+
+			// Broadly similar structure to the add benchmark, but cheap.
+			return a ^ b;
+		};
+
+		auto subtraction = [](std::uint64_t i) noexcept -> std::uint64_t
+		{
+			const std::uint64_t a = i;
+			const std::uint64_t b = i * 10;
+			return Morton::subtract(a, b);
+		};
+
+		for (int run = 0; run < 5; ++run)
+		{
+			benchmark_with_baseline("subtraction", iterations, baseline_fn, subtraction);
 		}
-		auto t2 = std::chrono::high_resolution_clock::now();
-		auto d = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1);
-		std::cout << "Subtract for 1000 runs took " << d.count() << " nanoseconds." << std::endl;
 	}
 
 	void test_mul()
@@ -312,6 +309,89 @@ namespace MortonBench
 		auto t2 = std::chrono::high_resolution_clock::now();
 		auto d = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1);
 		std::cout << "Divide for 1000 runs took " << d.count() << " nanoseconds." << std::endl;
+	}
+
+	/**
+	 * @brief Benchmarks the three modulo paths against each other.
+	 *
+	 * Compares the general decode/mod/encode path (non-power-of-two period),
+	 * the auto-dispatched power-of-two path, and the explicit Morton-mask path.
+	 * The mask value 0x3F is morton_encode(3, 3, 3), the largest valid index
+	 * for a period-4 range on each axis.
+	 */
+	void test_modulo()
+	{
+		constexpr std::uint64_t iterations = 1'000'000;
+
+		auto baseline_fn = [](std::uint64_t i) noexcept -> std::uint64_t
+		{
+			return i ^ (i * 3);
+		};
+
+		// Non-power-of-two period: must decode, apply %, then re-encode.
+		auto general = [](std::uint64_t i) noexcept -> std::uint64_t
+		{
+			return Morton::modulo(i, 3u, 3u, 3u);
+		};
+
+		// Power-of-two period: runtime check in modulo() selects the fast path.
+		auto auto_dispatch = [](std::uint64_t i) noexcept -> std::uint64_t
+		{
+			return Morton::modulo(i, 4u, 4u, 4u);
+		};
+
+		// Explicit fast path: caller supplies the Morton-coded period mask.
+		// 0x3F == morton_encode(3, 3, 3): period 4 on each axis.
+		auto mask_path = [](std::uint64_t i) noexcept -> std::uint64_t
+		{
+			return Morton::modulo_pow2(i, 0x3FULL);
+		};
+
+		for (int run = 0; run < 5; ++run)
+		{
+			benchmark_with_baseline("modulo general (3,3,3)",       iterations, baseline_fn, general);
+			benchmark_with_baseline("modulo auto-dispatch (4,4,4)", iterations, baseline_fn, auto_dispatch);
+			benchmark_with_baseline("modulo_pow2 mask (4,4,4)",     iterations, baseline_fn, mask_path);
+		}
+	}
+
+	/**
+	 * @brief Benchmarks the traversal primitives: descend, ascend, and octant_of.
+	 *
+	 * All three operations are O(1) and branchless. Net times near zero are
+	 * expected and indicate the operations are indistinguishable from loop
+	 * overhead at this scale.
+	 */
+	void test_traversal()
+	{
+		constexpr std::uint64_t iterations = 1'000'000;
+
+		auto baseline_fn = [](std::uint64_t i) noexcept -> std::uint64_t
+		{
+			return i ^ (i >> 3);
+		};
+
+		auto descent = [](std::uint64_t i) noexcept -> std::uint64_t
+		{
+			return Morton::descend(i, i & 7);
+		};
+
+		auto ascent = [](std::uint64_t i) noexcept -> std::uint64_t
+		{
+			return Morton::ascend(i);
+		};
+
+		auto octant = [](std::uint64_t i) noexcept -> std::uint64_t
+		{
+			return Morton::octant_of(i);
+		};
+
+		for (int run = 0; run < 5; ++run)
+		{
+			benchmark_with_baseline("descend",   iterations, baseline_fn, descent);
+			benchmark_with_baseline("ascend",    iterations, baseline_fn, ascent);
+			benchmark_with_baseline("octant_of", iterations, baseline_fn, octant);
+		}
 	}
 
 	struct Coord3

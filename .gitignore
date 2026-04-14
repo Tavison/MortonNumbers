@@ -121,3 +121,4 @@ vcpkg/packages/
 
 .DS_Store
 Thumbs.db
+memory/*.md
