@@ -211,30 +211,6 @@ namespace MortonBench
 		benchmark_with_baseline(label_b, iterations, baseline_fn, fn_b);
 	}
 
-	template <typename ResultFn>
-	std::uint64_t run_benchmark_body(ResultFn result_fn, std::uint64_t& checksum_out)
-	{
-		std::uint64_t checksum = 0;
-
-		auto t1 = std::chrono::high_resolution_clock::now();
-
-		for (std::uint64_t i = 0; i < 1'000'000; ++i)
-		{
-			const std::uint64_t a = i;
-			const std::uint64_t b = i * 2;
-
-			const std::uint64_t r = result_fn(a, b);
-
-			checksum = std::rotl(checksum, 7) ^ (r + 0x9e3779b97f4a7c15ull);
-			checksum *= 0xbf58476d1ce4e5b9ull;
-		}
-
-		auto t2 = std::chrono::high_resolution_clock::now();
-		checksum_out = checksum;
-
-		return std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count();
-	}
-
 	void bitCountTest()
 	{
 		uint64_t ull[] = { 0, 0xF0F0F0F0F0F0F0, 0xFFFFFFF, 0xFFFFFFFFFFFFFFFF };
@@ -252,21 +228,6 @@ namespace MortonBench
 		auto t2 = std::chrono::high_resolution_clock::now();
 		auto d = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1);
 		std::cout << "BitCount for 1000 runs took " << d.count() << " nanoseconds." << std::endl;
-	}
-
-	void test_add()
-	{
-		volatile std::uint64_t k(0b1011'0110'1101'1011'0110'1101'1011'0110);
-		// std::uint64_t k = 0;
-		volatile std::uint64_t l = 0b111;
-		auto t1 = std::chrono::high_resolution_clock::now();
-		for (std::uint64_t i = 0; i < 1000; ++i)
-		{
-			k = Morton::add_iterative(k, l);
-		}
-		auto t2 = std::chrono::high_resolution_clock::now();
-		auto d = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1);
-		std::cout << "Add for 1000 runs took " << d.count() << " nanoseconds." << std::endl;
 	}
 
 	void test_add_compare()
@@ -309,6 +270,7 @@ namespace MortonBench
 			std::cout << "----\n";
 		}
 	}
+
 	void test_sub()
 	{
 		volatile std::uint64_t k = 0b111111111111111111111111111111;

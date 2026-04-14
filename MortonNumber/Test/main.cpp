@@ -6,7 +6,6 @@
 int main()
 {
 	MortonBench::bitCountTest();
-	//MortonBench::test_add();
 	MortonBench::test_add_compare();
 	MortonBench::test_sub();
 	MortonBench::test_mul();
