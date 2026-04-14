@@ -99,6 +99,54 @@ namespace Morton
 	}
 
 	/**
+		* @brief Subtracts two values from a single Morton lane using a masked integer subtract.
+		*
+		* Borrow propagation through spacer bits requires those bits to be 0 in the
+		* minuend so that a borrow can ripple freely from one lane bit to the next.
+		* Masking with @p lane_mask naturally satisfies this — no fill is needed,
+		* making this simpler than the corresponding add_lane.
+		*
+		* The result is masked back to @p lane_mask before returning, so any borrow
+		* that escapes the Morton domain (e.g. past bit 62 on the z lane) is discarded.
+		*
+		* @param op1 Minuend.
+		* @param op2 Subtrahend.
+		* @param lane_mask Mask selecting one Morton lane.
+		* @return Difference of the selected lane from @p op1 and @p op2.
+		*/
+	[[nodiscard]] constexpr MORTON_FORCEINLINE std::uint64_t
+		subtract_lane(std::uint64_t op1, std::uint64_t op2, std::uint64_t lane_mask) noexcept
+	{
+		return ((op1 & lane_mask) - (op2 & lane_mask)) & lane_mask;
+	}
+
+	/**
+		* @brief Subtracts two 64-bit 3D Morton-coded values by subtracting each lane
+		* independently and recombining the results.
+		*
+		* The x lane uses bit positions 0, 3, 6, ...
+		* The y lane uses bit positions 1, 4, 7, ...
+		* The z lane uses bit positions 2, 5, 8, ...
+		*
+		* @param op1 Minuend.
+		* @param op2 Subtrahend.
+		* @return Difference of the two Morton-coded operands.
+		*/
+	[[nodiscard]] constexpr MORTON_FORCEINLINE std::uint64_t
+		subtract_masked(std::uint64_t op1, std::uint64_t op2) noexcept
+	{
+		using namespace MortonCore::Detail;
+
+		constexpr std::uint64_t x_mask = lane_mask_3d;
+		constexpr std::uint64_t y_mask = lane_mask_3d << 1;
+		constexpr std::uint64_t z_mask = lane_mask_3d << 2;
+
+		return subtract_lane(op1, op2, x_mask)
+			| subtract_lane(op1, op2, y_mask)
+			| subtract_lane(op1, op2, z_mask);
+	}
+
+	/**
 	* @brief Subtracts one Morton-coded value from another using borrow
 	* propagation spaced three bits apart.
 	*
@@ -112,7 +160,7 @@ namespace Morton
 	* @return Difference of the operands, or 0 when the final result does not
 	* compare as less than the original minuend.
 	*/
-	auto subtract(std::uint64_t op1, std::uint64_t op2)
+	auto subtract_iterative(std::uint64_t op1, std::uint64_t op2)
 	{
 		auto check = op1;
 		std::uint64_t dif, borrow;
