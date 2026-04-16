@@ -7,7 +7,7 @@
 
 namespace MortonDebug
 {
-	static const int DEBUG_PRINT = 1;
+	static constexpr int DEBUG_PRINT = 1;
 
 	/**
 	 * @brief Writes the bit pattern of a value to standard output.

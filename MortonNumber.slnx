@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="MortonNumber/MortonNumber.vcxproj" />
+  <Project Path="MortonNumber/MortonNumber.vcxproj" Id="6c6d3b39-b649-4ba6-999b-5e4c34f7e98f" />
 </Solution>

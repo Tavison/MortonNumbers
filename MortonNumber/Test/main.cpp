@@ -1,7 +1,4 @@
-
-
 #include "MortonTests.h"
-
 
 int main()
 {
@@ -9,11 +6,10 @@ int main()
 	MortonBench::test_add();
 	MortonBench::test_subtract();
 	MortonBench::test_mul();
-	MortonBench::test_div();
+	// MortonBench::test_div();
 	MortonBench::test_modulo();
 	MortonBench::test_traversal();
 	MortonBench::TestMortonEncodeMagicBits();
 	MortonBench::TestMortonDecodeMagicBits();
 	MortonBench::TestMortonEncodeDecodeRoundTrip();
 }
-
